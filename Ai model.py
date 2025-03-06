@@ -3,27 +3,31 @@ import random
 import numpy as np
 import nltk
 from nltk.stem import WordNetLemmatizer
-import tensorflow as tf
+from nltk.tokenize import word_tokenize
+from sklearn.preprocessing import LabelEncoder
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, LSTM, Embedding
-from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.layers import Embedding, Bidirectional, LSTM, Dense, Dropout
 from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.preprocessing.text import Tokenizer
 
-# Load intents file
+# Load intents data
 with open("intents.json", "r") as file:
     data = json.load(file)
 
 # Initialize NLP tools
+nltk.download("punkt")
+nltk.download("wordnet")
 lemmatizer = WordNetLemmatizer()
 tokenizer = Tokenizer()
 
 # Prepare data
-patterns = []
-tags = []
-responses = {}
+patterns, tags, responses = [], [], {}
 for intent in data["intents"]:
     for pattern in intent["patterns"]:
-        patterns.append(pattern)
+        tokenized_words = word_tokenize(pattern.lower())  # Tokenize
+        lemmatized_words = [lemmatizer.lemmatize(w) for w in tokenized_words]  # Lemmatize
+        sentence = " ".join(lemmatized_words)
+        patterns.append(sentence)
         tags.append(intent["tag"])
     responses[intent["tag"]] = intent["responses"]
 
@@ -35,21 +39,21 @@ max_length = max(len(seq) for seq in sequences)
 X = pad_sequences(sequences, maxlen=max_length, padding="post")
 
 # Encode tags
-unique_tags = list(set(tags))
-tag_index = {tag: i for i, tag in enumerate(unique_tags)}
-y = np.array([tag_index[tag] for tag in tags])
+encoder = LabelEncoder()
+y = encoder.fit_transform(tags)
 
-# Build Model
+# Build improved LSTM model
 model = Sequential([
-    Embedding(input_dim=len(word_index) + 1, output_dim=16, input_length=max_length),
-    LSTM(16, return_sequences=True),
-    LSTM(16),
-    Dense(16, activation="relu"),
-    Dense(len(unique_tags), activation="softmax")
+    Embedding(input_dim=len(word_index) + 1, output_dim=32, input_length=max_length),
+    Bidirectional(LSTM(32, return_sequences=True)),
+    Bidirectional(LSTM(32)),
+    Dense(32, activation="relu"),
+    Dropout(0.2),
+    Dense(len(set(tags)), activation="softmax")
 ])
 
 model.compile(loss="sparse_categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
+model.fit(X, y, epochs=300, batch_size=8)
 
-# Train Model
-model.fit(X, y, epochs=200, batch_size=8)
-model.save("chatbot_model.h5")
+# Save the model
+model.save("improved_chatbot_model.h5")
